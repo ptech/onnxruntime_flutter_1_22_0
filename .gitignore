@@ -29,3 +29,13 @@ migrate_working_dir/
 .packages
 build/
 /thirdparty
+
+# ONNX Runtime downloaded files
+macos/build/
+macos/*.dylib
+macos/temp_download/
+linux/*.so
+linux/*.so.*
+linux/temp_download/
+windows/*.dll
+windows/temp_download/

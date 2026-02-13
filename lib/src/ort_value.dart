@@ -7,6 +7,15 @@ import 'package:onnxruntime_v2/src/bindings/onnxruntime_bindings_generated.dart'
 import 'package:onnxruntime_v2/src/ort_env.dart';
 import 'package:onnxruntime_v2/src/ort_status.dart';
 import 'package:onnxruntime_v2/src/util/list_shape_extension.dart';
+import 'package:onnxruntime_v2/src/util/typed_data_onnx_extension.dart';
+
+/// Internal class to hold reusable buffer information
+class _ReusableBuffer {
+  final ffi.Pointer<ffi.Void> ptr;
+  final int size;
+
+  _ReusableBuffer(this.ptr, this.size);
+}
 
 abstract class OrtValue {
   late ffi.Pointer<bg.OrtValue> _ptr;
@@ -284,6 +293,344 @@ class OrtValueTensor extends OrtValue {
     throw Exception('Invalid element type');
   }
 
+  // Reusable buffer cache for optimized tensor creation
+  // Maps data type to (pointer, size)
+  static final Map<ONNXTensorElementDataType, _ReusableBuffer> _bufferCache = {};
+
+  /// Helper to get or allocate a reusable buffer
+  static ffi.Pointer<T> _getOrAllocateBuffer<T extends ffi.NativeType>(
+    ONNXTensorElementDataType dataType,
+    int dataSize,
+    ffi.Pointer<T> Function(int) allocator,
+  ) {
+    final cached = _bufferCache[dataType];
+    if (cached != null && cached.size >= dataSize) {
+      return cached.ptr.cast<T>();
+    }
+
+    // Need to allocate new buffer
+    if (cached != null) {
+      calloc.free(cached.ptr);
+    }
+    final newPtr = allocator(dataSize);
+    _bufferCache[dataType] = _ReusableBuffer(newPtr.cast<ffi.Void>(), dataSize);
+    return newPtr;
+  }
+
+  /// Get or create a reusable typed buffer backed by native memory
+  /// This allows you to write data directly to native memory without an extra copy
+  ///
+  /// The data type is automatically inferred from the generic type T.
+  ///
+  /// Supported types: Float32List, Float64List, Int8List, Uint8List, Int16List,
+  /// Uint16List, Int32List, Uint32List, Int64List, Uint64List
+  ///
+  /// Usage:
+  /// ```dart
+  /// // Get buffer for Float32 - type is inferred!
+  /// final buffer = OrtValueTensor.getOrCreateReusableBuffer<Float32List>(1228800);
+  ///
+  /// // Write directly to buffer
+  /// buffer.setRange(0, imageData.length, imageData);
+  ///
+  /// // Create tensor from the buffer (zero-copy)
+  /// final tensor = OrtValueTensor.createTensorFromBuffer(
+  ///   buffer,
+  ///   [1, 3, 640, 640],
+  /// );
+  /// ```
+  static T getOrCreateReusableBuffer<T extends TypedData>(int size) {
+    // Infer the data type from the generic type T using the static helper
+    final dataType = TypedDataOnnxType.getOnnxTypeFromType(T);
+
+    if (dataType == ONNXTensorElementDataType.float) {
+      final ptr = _getOrAllocateBuffer<ffi.Float>(
+        dataType,
+        size,
+        (size) => calloc<ffi.Float>(size),
+      );
+      return ptr.asTypedList(size) as T;
+    } else if (dataType == ONNXTensorElementDataType.double) {
+      final ptr = _getOrAllocateBuffer<ffi.Double>(
+        dataType,
+        size,
+        (size) => calloc<ffi.Double>(size),
+      );
+      return ptr.asTypedList(size) as T;
+    } else if (dataType == ONNXTensorElementDataType.int8) {
+      final ptr = _getOrAllocateBuffer<ffi.Int8>(
+        dataType,
+        size,
+        (size) => calloc<ffi.Int8>(size),
+      );
+      return ptr.asTypedList(size) as T;
+    } else if (dataType == ONNXTensorElementDataType.uint8) {
+      final ptr = _getOrAllocateBuffer<ffi.Uint8>(
+        dataType,
+        size,
+        (size) => calloc<ffi.Uint8>(size),
+      );
+      return ptr.asTypedList(size) as T;
+    } else if (dataType == ONNXTensorElementDataType.int16) {
+      final ptr = _getOrAllocateBuffer<ffi.Int16>(
+        dataType,
+        size,
+        (size) => calloc<ffi.Int16>(size),
+      );
+      return ptr.asTypedList(size) as T;
+    } else if (dataType == ONNXTensorElementDataType.uint16) {
+      final ptr = _getOrAllocateBuffer<ffi.Uint16>(
+        dataType,
+        size,
+        (size) => calloc<ffi.Uint16>(size),
+      );
+      return ptr.asTypedList(size) as T;
+    } else if (dataType == ONNXTensorElementDataType.int32) {
+      final ptr = _getOrAllocateBuffer<ffi.Int32>(
+        dataType,
+        size,
+        (size) => calloc<ffi.Int32>(size),
+      );
+      return ptr.asTypedList(size) as T;
+    } else if (dataType == ONNXTensorElementDataType.uint32) {
+      final ptr = _getOrAllocateBuffer<ffi.Uint32>(
+        dataType,
+        size,
+        (size) => calloc<ffi.Uint32>(size),
+      );
+      return ptr.asTypedList(size) as T;
+    } else if (dataType == ONNXTensorElementDataType.int64) {
+      final ptr = _getOrAllocateBuffer<ffi.Int64>(
+        dataType,
+        size,
+        (size) => calloc<ffi.Int64>(size),
+      );
+      return ptr.asTypedList(size) as T;
+    } else if (dataType == ONNXTensorElementDataType.uint64) {
+      final ptr = _getOrAllocateBuffer<ffi.Uint64>(
+        dataType,
+        size,
+        (size) => calloc<ffi.Uint64>(size),
+      );
+      return ptr.asTypedList(size) as T;
+    } else {
+      throw Exception('Unsupported data type: $dataType');
+    }
+  }
+
+  /// Create a tensor from a reusable buffer obtained via getOrCreateReusableBuffer
+  /// This is a zero-copy operation since the buffer is already in native memory
+  ///
+  /// The data type is automatically inferred from the buffer type using the extension.
+  /// The buffer must have been obtained from getOrCreateReusableBuffer.
+  static OrtValueTensor createTensorFromBuffer(
+    TypedData buffer,
+    List<int> shape,
+  ) {
+    // Infer the data type from the buffer type using the extension
+    final dataType = buffer.onnxType;
+
+    // Get the pointer from the cached buffer
+    final cached = _bufferCache[dataType];
+    if (cached == null) {
+      throw Exception(
+        'Buffer not found for type $dataType. Call getOrCreateReusableBuffer first.',
+      );
+    }
+
+    final dataPtr = cached.ptr;
+    final dataSize = buffer.lengthInBytes ~/ buffer.elementSizeInBytes;
+    final elementSize = buffer.elementSizeInBytes;
+    final dataByteCount = dataSize * elementSize;
+
+    // Create tensor
+    final bindings = OrtEnv.instance.ortApiPtr;
+    final shapeSize = shape.length;
+    final shapePtr = calloc<ffi.Int64>(shapeSize);
+    shapePtr.asTypedList(shapeSize).setAll(0, shape);
+
+    final ortMemoryInfoPtrPtr = calloc<ffi.Pointer<bg.OrtMemoryInfo>>();
+    var statusPtr = bindings.ref.AllocatorGetInfo.asFunction<
+            bg.OrtStatusPtr Function(ffi.Pointer<bg.OrtAllocator>,
+                ffi.Pointer<ffi.Pointer<bg.OrtMemoryInfo>>)>()(
+        OrtAllocator.instance.ptr, ortMemoryInfoPtrPtr);
+    OrtStatus.checkOrtStatus(statusPtr);
+
+    final ortMemoryInfoPtr = ortMemoryInfoPtrPtr.value;
+    final ortValuePtrPtr = calloc<ffi.Pointer<bg.OrtValue>>();
+
+    statusPtr = bindings.ref.CreateTensorWithDataAsOrtValue.asFunction<
+            bg.OrtStatusPtr Function(
+                ffi.Pointer<bg.OrtMemoryInfo>,
+                ffi.Pointer<ffi.Void>,
+                int,
+                ffi.Pointer<ffi.Int64>,
+                int,
+                int,
+                ffi.Pointer<ffi.Pointer<bg.OrtValue>>)>()(
+        ortMemoryInfoPtr,
+        dataPtr,
+        dataByteCount,
+        shapePtr,
+        shapeSize,
+        dataType.value,
+        ortValuePtrPtr);
+    OrtStatus.checkOrtStatus(statusPtr);
+
+    final ortValuePtr = ortValuePtrPtr.value;
+    calloc.free(shapePtr);
+    calloc.free(ortValuePtrPtr);
+    calloc.free(ortMemoryInfoPtrPtr);
+
+    // Pass null to prevent automatic cleanup of our reusable buffer
+    return OrtValueTensor(ortValuePtr, null);
+  }
+
+  /// Create a tensor from typed data using a reusable buffer (zero-copy when possible)
+  /// This is much faster than createTensorWithDataList for repeated calls with same-sized data
+  ///
+  /// IMPORTANT: Tensors created with this method do NOT own their memory.
+  /// You MUST call disposeReusableBuffers() when done to free the cached buffers.
+  ///
+  /// Example:
+  /// ```dart
+  /// // Create tensors (reuses buffers automatically)
+  /// final tensor1 = OrtValueTensor.createTensorWithReusableBuffer(data1, shape);
+  /// final tensor2 = OrtValueTensor.createTensorWithReusableBuffer(data2, shape);
+  ///
+  /// // Use tensors...
+  /// tensor1.release();
+  /// tensor2.release();
+  ///
+  /// // Clean up buffers when completely done
+  /// OrtValueTensor.disposeReusableBuffers();
+  /// ```
+  static OrtValueTensor createTensorWithReusableBuffer(
+    TypedData data,
+    List<int> shape,
+  ) {
+    final int dataSize = data.lengthInBytes ~/ data.elementSizeInBytes;
+    final ONNXTensorElementDataType dataType;
+    final int elementSize;
+    final ffi.Pointer<ffi.Void> dataPtr;
+
+    // Determine type, allocate/reuse buffer, and copy data based on data type
+    if (data is Float32List) {
+      dataType = ONNXTensorElementDataType.float;
+      elementSize = 4;
+      final ptr = _getOrAllocateBuffer<ffi.Float>(dataType, dataSize, (size) => calloc<ffi.Float>(size));
+      ptr.asTypedList(dataSize).setRange(0, dataSize, data);
+      dataPtr = ptr.cast<ffi.Void>();
+    } else if (data is Float64List) {
+      dataType = ONNXTensorElementDataType.double;
+      elementSize = 8;
+      final ptr = _getOrAllocateBuffer<ffi.Double>(dataType, dataSize, (size) => calloc<ffi.Double>(size));
+      ptr.asTypedList(dataSize).setRange(0, dataSize, data);
+      dataPtr = ptr.cast<ffi.Void>();
+    } else if (data is Int8List) {
+      dataType = ONNXTensorElementDataType.int8;
+      elementSize = 1;
+      final ptr = _getOrAllocateBuffer<ffi.Int8>(dataType, dataSize, (size) => calloc<ffi.Int8>(size));
+      ptr.asTypedList(dataSize).setRange(0, dataSize, data);
+      dataPtr = ptr.cast<ffi.Void>();
+    } else if (data is Uint8List) {
+      dataType = ONNXTensorElementDataType.uint8;
+      elementSize = 1;
+      final ptr = _getOrAllocateBuffer<ffi.Uint8>(dataType, dataSize, (size) => calloc<ffi.Uint8>(size));
+      ptr.asTypedList(dataSize).setRange(0, dataSize, data);
+      dataPtr = ptr.cast<ffi.Void>();
+    } else if (data is Int16List) {
+      dataType = ONNXTensorElementDataType.int16;
+      elementSize = 2;
+      final ptr = _getOrAllocateBuffer<ffi.Int16>(dataType, dataSize, (size) => calloc<ffi.Int16>(size));
+      ptr.asTypedList(dataSize).setRange(0, dataSize, data);
+      dataPtr = ptr.cast<ffi.Void>();
+    } else if (data is Uint16List) {
+      dataType = ONNXTensorElementDataType.uint16;
+      elementSize = 2;
+      final ptr = _getOrAllocateBuffer<ffi.Uint16>(dataType, dataSize, (size) => calloc<ffi.Uint16>(size));
+      ptr.asTypedList(dataSize).setRange(0, dataSize, data);
+      dataPtr = ptr.cast<ffi.Void>();
+    } else if (data is Int32List) {
+      dataType = ONNXTensorElementDataType.int32;
+      elementSize = 4;
+      final ptr = _getOrAllocateBuffer<ffi.Int32>(dataType, dataSize, (size) => calloc<ffi.Int32>(size));
+      ptr.asTypedList(dataSize).setRange(0, dataSize, data);
+      dataPtr = ptr.cast<ffi.Void>();
+    } else if (data is Uint32List) {
+      dataType = ONNXTensorElementDataType.uint32;
+      elementSize = 4;
+      final ptr = _getOrAllocateBuffer<ffi.Uint32>(dataType, dataSize, (size) => calloc<ffi.Uint32>(size));
+      ptr.asTypedList(dataSize).setRange(0, dataSize, data);
+      dataPtr = ptr.cast<ffi.Void>();
+    } else if (data is Int64List) {
+      dataType = ONNXTensorElementDataType.int64;
+      elementSize = 8;
+      final ptr = _getOrAllocateBuffer<ffi.Int64>(dataType, dataSize, (size) => calloc<ffi.Int64>(size));
+      ptr.asTypedList(dataSize).setRange(0, dataSize, data);
+      dataPtr = ptr.cast<ffi.Void>();
+    } else if (data is Uint64List) {
+      dataType = ONNXTensorElementDataType.uint64;
+      elementSize = 8;
+      final ptr = _getOrAllocateBuffer<ffi.Uint64>(dataType, dataSize, (size) => calloc<ffi.Uint64>(size));
+      ptr.asTypedList(dataSize).setRange(0, dataSize, data);
+      dataPtr = ptr.cast<ffi.Void>();
+    } else {
+      throw Exception('Unsupported TypedData type: ${data.runtimeType}');
+    }
+    final dataByteCount = dataSize * elementSize;
+
+    // Create shape pointer
+    final shapeSize = shape.length;
+    final shapePtr = calloc<ffi.Int64>(shapeSize);
+    shapePtr.asTypedList(shapeSize).setAll(0, shape);
+
+    final ortMemoryInfoPtrPtr = calloc<ffi.Pointer<bg.OrtMemoryInfo>>();
+    var statusPtr = OrtEnv.instance.ortApiPtr.ref.AllocatorGetInfo.asFunction<
+            bg.OrtStatusPtr Function(ffi.Pointer<bg.OrtAllocator>,
+                ffi.Pointer<ffi.Pointer<bg.OrtMemoryInfo>>)>()(
+        OrtAllocator.instance.ptr, ortMemoryInfoPtrPtr);
+    OrtStatus.checkOrtStatus(statusPtr);
+
+    final ortMemoryInfoPtr = ortMemoryInfoPtrPtr.value;
+    final ortValuePtrPtr = calloc<ffi.Pointer<bg.OrtValue>>();
+
+    statusPtr = OrtEnv.instance.ortApiPtr.ref.CreateTensorWithDataAsOrtValue
+            .asFunction<
+                bg.OrtStatusPtr Function(
+                    ffi.Pointer<bg.OrtMemoryInfo>,
+                    ffi.Pointer<ffi.Void>,
+                    int,
+                    ffi.Pointer<ffi.Int64>,
+                    int,
+                    int,
+                    ffi.Pointer<ffi.Pointer<bg.OrtValue>>)>()(
+        ortMemoryInfoPtr,
+        dataPtr,
+        dataByteCount,
+        shapePtr,
+        shapeSize,
+        dataType.value,
+        ortValuePtrPtr);
+    OrtStatus.checkOrtStatus(statusPtr);
+
+    final ortValuePtr = ortValuePtrPtr.value;
+    calloc.free(shapePtr);
+    calloc.free(ortValuePtrPtr);
+    calloc.free(ortMemoryInfoPtrPtr);
+
+    return OrtValueTensor(ortValuePtr, null);
+  }
+
+  /// Dispose all reusable buffers created by createTensorWithReusableBuffer
+  /// Call this when you're completely done with tensor creation to free memory
+  static void disposeReusableBuffers() {
+    for (final buffer in _bufferCache.values) {
+      calloc.free(buffer.ptr);
+    }
+    _bufferCache.clear();
+  }
+
   static OrtValueTensor createTensorWithDataList(List data,
       [List<int>? shape]) {
     shape ??= data.shape;
@@ -293,7 +640,8 @@ class OrtValueTensor extends OrtValue {
     int dataSize = 0;
     int dataByteCount = 0;
     if (element is Uint8List) {
-      final flattenData = data.flatten<int>();
+      // Optimize: skip flatten if data is already a typed list
+      final flattenData = data is Uint8List ? data : data.flatten<int>();
       dataSize = flattenData.length;
       dataType = ONNXTensorElementDataType.uint8;
       dataPtr = (calloc<ffi.Uint8>(dataSize)
@@ -301,7 +649,7 @@ class OrtValueTensor extends OrtValue {
           .cast();
       dataByteCount = dataSize;
     } else if (element is Int8List) {
-      final flattenData = data.flatten<int>();
+      final flattenData = data is Int8List ? data : data.flatten<int>();
       dataSize = flattenData.length;
       dataType = ONNXTensorElementDataType.int8;
       dataPtr = (calloc<ffi.Int8>(dataSize)
@@ -309,7 +657,7 @@ class OrtValueTensor extends OrtValue {
           .cast();
       dataByteCount = dataSize;
     } else if (element is Uint16List) {
-      final flattenData = data.flatten<int>();
+      final flattenData = data is Uint16List ? data : data.flatten<int>();
       dataSize = flattenData.length;
       dataType = ONNXTensorElementDataType.uint16;
       dataPtr = (calloc<ffi.Uint16>(dataSize)
@@ -317,7 +665,7 @@ class OrtValueTensor extends OrtValue {
           .cast();
       dataByteCount = dataSize * 2;
     } else if (element is Int16List) {
-      final flattenData = data.flatten<int>();
+      final flattenData = data is Int16List ? data : data.flatten<int>();
       dataSize = flattenData.length;
       dataType = ONNXTensorElementDataType.int16;
       dataPtr = (calloc<ffi.Int16>(dataSize)
@@ -325,7 +673,7 @@ class OrtValueTensor extends OrtValue {
           .cast();
       dataByteCount = dataSize * 2;
     } else if (element is Uint32List) {
-      final flattenData = data.flatten<int>();
+      final flattenData = data is Uint32List ? data : data.flatten<int>();
       dataSize = flattenData.length;
       dataType = ONNXTensorElementDataType.uint32;
       dataPtr = (calloc<ffi.Uint32>(dataSize)
@@ -333,7 +681,7 @@ class OrtValueTensor extends OrtValue {
           .cast();
       dataByteCount = dataSize * 4;
     } else if (element is Int32List) {
-      final flattenData = data.flatten<int>();
+      final flattenData = data is Int32List ? data : data.flatten<int>();
       dataSize = flattenData.length;
       dataType = ONNXTensorElementDataType.int32;
       dataPtr = (calloc<ffi.Int32>(dataSize)
@@ -341,7 +689,7 @@ class OrtValueTensor extends OrtValue {
           .cast();
       dataByteCount = dataSize * 4;
     } else if (element is Uint64List) {
-      final flattenData = data.flatten<int>();
+      final flattenData = data is Uint64List ? data : data.flatten<int>();
       dataSize = flattenData.length;
       dataType = ONNXTensorElementDataType.uint64;
       dataPtr = (calloc<ffi.Uint64>(dataSize)
@@ -349,7 +697,7 @@ class OrtValueTensor extends OrtValue {
           .cast();
       dataByteCount = dataSize * 8;
     } else if (element is Int64List || element is int) {
-      final flattenData = data.flatten<int>();
+      final flattenData = data is Int64List ? data : data.flatten<int>();
       dataSize = flattenData.length;
       dataType = ONNXTensorElementDataType.int64;
       dataPtr = (calloc<ffi.Int64>(dataSize)
@@ -357,7 +705,7 @@ class OrtValueTensor extends OrtValue {
           .cast();
       dataByteCount = dataSize * 8;
     } else if (element is Float32List) {
-      final flattenData = data.flatten<double>();
+      final flattenData = data is Float32List ? data : data.flatten<double>();
       dataSize = flattenData.length;
       dataType = ONNXTensorElementDataType.float;
       dataPtr = (calloc<ffi.Float>(dataSize)
@@ -365,7 +713,7 @@ class OrtValueTensor extends OrtValue {
           .cast();
       dataByteCount = dataSize * 4;
     } else if (element is Float64List || element is double) {
-      final flattenData = data.flatten<double>();
+      final flattenData = data is Float64List ? data : data.flatten<double>();
       dataSize = flattenData.length;
       dataType = ONNXTensorElementDataType.double;
       dataPtr = (calloc<ffi.Double>(dataSize)
