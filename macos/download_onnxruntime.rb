@@ -2,8 +2,8 @@
 # Script to download ONNX Runtime library for macOS
 # This is called automatically by the podspec during pod install
 
-require 'open-uri'
 require 'fileutils'
+require 'open-uri'
 
 # Configuration
 ONNXRUNTIME_VERSION = "1.22.0"
@@ -29,22 +29,29 @@ def download_onnxruntime
 
     # Download the archive
     puts "  Downloading from #{download_url}..."
-    URI.open(download_url) do |remote_file|
-      File.open(archive_path, 'wb') do |local_file|
-        local_file.write(remote_file.read)
-      end
+    total_size = nil
+    URI.open(download_url,
+      content_length_proc: ->(size) { total_size = size },
+      progress_proc: ->(downloaded) {
+        if total_size
+          percent = (downloaded.to_f / total_size * 100).round(1)
+          print "\r  Progress: #{percent}%"
+        end
+      }
+    ) do |remote_file|
+      File.open(archive_path, 'wb') { |f| f.write(remote_file.read) }
     end
-    puts "  ✓ Download complete"
+    puts "\n  ✓ Download complete"
 
     # Extract the archive
     puts "  Extracting archive..."
-    unless system("tar -xzf #{archive_path} -C #{temp_dir}")
-      raise "Failed to extract archive"
-    end
+    system("tar -xzf #{archive_path} -C #{temp_dir}") or raise "Failed to extract archive"
 
-    # Find and copy the dylib
-    extracted_lib = Dir.glob("#{temp_dir}/**/libonnxruntime.*.dylib").first
-    if extracted_lib
+    # Find and copy the dylib (exclude .dSYM directories)
+    extracted_lib = Dir.glob("#{temp_dir}/**/libonnxruntime.#{ONNXRUNTIME_VERSION}.dylib")
+      .reject { |path| path.include?('.dSYM') }
+      .first
+    if extracted_lib && File.file?(extracted_lib)
       FileUtils.cp(extracted_lib, ONNXRUNTIME_LIB)
       puts "  ✓ Library extracted to #{File.basename(ONNXRUNTIME_LIB)}"
     else
