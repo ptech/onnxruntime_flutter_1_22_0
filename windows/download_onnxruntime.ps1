@@ -27,11 +27,11 @@ foreach ($lib in $EXPECTED_LIBS) {
 }
 
 if ($allExist) {
-    Write-Host "✓ ONNX Runtime libraries already present"
+    Write-Host "[OK] ONNX Runtime libraries already present"
     exit 0
 }
 
-Write-Host "📦 ONNX Runtime libraries not found. Downloading from Microsoft releases..."
+Write-Host "ONNX Runtime libraries not found. Downloading from Microsoft releases..."
 
 # Create temp directory
 $TEMP_DIR = Join-Path $SCRIPT_DIR "temp_download"
@@ -44,39 +44,39 @@ try {
     # Download the archive
     $ARCHIVE_PATH = Join-Path $TEMP_DIR "onnxruntime.zip"
     Write-Host "  Downloading from $DOWNLOAD_URL..."
-    
+
     # Use .NET WebClient for progress
     $webClient = New-Object System.Net.WebClient
     $webClient.DownloadFile($DOWNLOAD_URL, $ARCHIVE_PATH)
-    
-    Write-Host "  ✓ Download complete"
+
+    Write-Host "  [OK] Download complete"
 
     # Extract the archive
     Write-Host "  Extracting archive..."
     Expand-Archive -Path $ARCHIVE_PATH -DestinationPath $TEMP_DIR -Force
-    Write-Host "  ✓ Extraction complete"
+    Write-Host "  [OK] Extraction complete"
 
     # Find and copy the libraries
     Write-Host "  Copying libraries..."
     foreach ($lib in $EXPECTED_LIBS) {
         # Find the library in the extracted directory
         $foundLib = Get-ChildItem -Path $TEMP_DIR -Filter $lib -Recurse -File | Select-Object -First 1
-        
+
         if ($foundLib) {
             $destPath = Join-Path $SCRIPT_DIR $lib
             Copy-Item -Path $foundLib.FullName -Destination $destPath -Force
-            Write-Host "    ✓ $lib"
+            Write-Host "    [OK] $lib"
         } else {
-            Write-Host "    ⚠ $lib not found (may be optional)"
+            Write-Host "    [WARNING] $lib not found (may be optional)"
         }
     }
 
-    Write-Host "✅ ONNX Runtime $ONNXRUNTIME_VERSION downloaded successfully"
+    Write-Host "[SUCCESS] ONNX Runtime $ONNXRUNTIME_VERSION downloaded successfully"
     exit 0
 
 } catch {
-    Write-Host "❌ Failed to download ONNX Runtime: $_"
-    Write-Host "Please download manually from $DOWNLOAD_URL"
+    Write-Host "Failed to download ONNX Runtime: $_"
+    Write-Host "Please download manually from: $DOWNLOAD_URL"
     exit 1
 
 } finally {
