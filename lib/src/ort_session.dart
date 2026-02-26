@@ -845,7 +845,7 @@ class OrtSessionOptions {
     // CUDA/TensorRT for NVIDIA
     if (!hasProvider) {
       try {
-        if (appendCudaProvider(CUDAFlags.useArena)) {
+        if (appendCudaProvider(CUDAFlags.useNone)) {
           hasProvider = true;
         }
       } catch (e) {
