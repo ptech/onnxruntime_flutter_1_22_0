@@ -660,7 +660,7 @@ class OrtSessionOptions {
         providerName = 'XNNPACK';
         break;
       case OrtProvider.tensorrt:
-        providerName = 'TensorRT';
+        providerName = 'NvTensorRtRtx';
         break;
       case OrtProvider.directml:
         providerName = 'DML';
