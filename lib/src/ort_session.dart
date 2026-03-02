@@ -660,7 +660,7 @@ class OrtSessionOptions {
         providerName = 'XNNPACK';
         break;
       case OrtProvider.tensorrt:
-        providerName = 'TensorRT';
+        providerName = 'NvTensorRtRtx';
         break;
       case OrtProvider.directml:
         providerName = 'DML';
@@ -845,7 +845,7 @@ class OrtSessionOptions {
     // CUDA/TensorRT for NVIDIA
     if (!hasProvider) {
       try {
-        if (appendCudaProvider(CUDAFlags.useArena)) {
+        if (appendCudaProvider(CUDAFlags.useNone)) {
           hasProvider = true;
         }
       } catch (e) {

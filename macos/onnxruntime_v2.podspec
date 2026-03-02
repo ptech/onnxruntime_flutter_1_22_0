@@ -13,6 +13,10 @@ OnnxRuntime plugin for Flutter apps.
   s.license          = { :file => '../LICENSE' }
   s.author           = { 'Your Company' => 'email@example.com' }
 
+  # Download ONNX Runtime library from official Microsoft release if not present
+  require_relative 'download_onnxruntime'
+  download_onnxruntime
+
   # This will ensure the source files in Classes/ are included in the native
   # builds of apps using this FFI plugin. Podspec does not support relative
   # paths, so Classes contains a forwarder C file that relatively imports

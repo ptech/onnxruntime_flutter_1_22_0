@@ -12,7 +12,7 @@ final DynamicLibrary _dylib = () {
   }
 
   if (Platform.isMacOS) {
-    return DynamicLibrary.open('libonnxruntime.1.21.0.dylib');
+    return DynamicLibrary.open('libonnxruntime.1.22.0.dylib');
   }
 
   if (Platform.isWindows) {
