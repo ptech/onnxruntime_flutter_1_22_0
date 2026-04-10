@@ -4,9 +4,9 @@
 $ErrorActionPreference = "Stop"
 
 # Configuration
-$ONNXRUNTIME_VERSION = "1.22.0"
+$ONNXRUNTIME_VERSION = "1.24.4"
 $SCRIPT_DIR = Split-Path -Parent $MyInvocation.MyCommand.Path
-$DOWNLOAD_URL = "https://github.com/microsoft/onnxruntime/releases/download/v$ONNXRUNTIME_VERSION/onnxruntime-win-x64-gpu-$ONNXRUNTIME_VERSION.zip"
+$DOWNLOAD_URL = "https://github.com/microsoft/onnxruntime/releases/download/v$ONNXRUNTIME_VERSION/onnxruntime-win-x64-gpu_cuda13-$ONNXRUNTIME_VERSION.zip"
 
 # List of expected libraries
 $EXPECTED_LIBS = @(

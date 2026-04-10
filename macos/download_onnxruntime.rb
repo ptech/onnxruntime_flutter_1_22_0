@@ -6,7 +6,7 @@ require 'fileutils'
 require 'open-uri'
 
 # Configuration
-ONNXRUNTIME_VERSION = "1.22.0"
+ONNXRUNTIME_VERSION = "1.24.4"
 SCRIPT_DIR = __dir__
 ONNXRUNTIME_LIB = File.join(SCRIPT_DIR, "libonnxruntime.#{ONNXRUNTIME_VERSION}.dylib")
 
@@ -19,7 +19,7 @@ def download_onnxruntime
 
   puts "📦 ONNX Runtime library not found. Downloading from Microsoft releases..."
 
-  download_url = "https://github.com/microsoft/onnxruntime/releases/download/v#{ONNXRUNTIME_VERSION}/onnxruntime-osx-universal2-#{ONNXRUNTIME_VERSION}.tgz"
+  download_url = "https://github.com/microsoft/onnxruntime/releases/download/v#{ONNXRUNTIME_VERSION}/onnxruntime-osx-arm64-#{ONNXRUNTIME_VERSION}.tgz"
   temp_dir = File.join(SCRIPT_DIR, "temp_download")
   archive_path = File.join(temp_dir, "onnxruntime.tgz")
 

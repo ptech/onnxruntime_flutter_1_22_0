@@ -5,9 +5,9 @@
 set -e
 
 # Configuration
-ONNXRUNTIME_VERSION="1.22.0"
+ONNXRUNTIME_VERSION="1.24.4"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DOWNLOAD_URL="https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/onnxruntime-linux-x64-gpu-${ONNXRUNTIME_VERSION}.tgz"
+DOWNLOAD_URL="https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/onnxruntime-linux-x64-gpu_cuda13-${ONNXRUNTIME_VERSION}.tgz"
 
 # List of expected libraries
 EXPECTED_LIBS=(

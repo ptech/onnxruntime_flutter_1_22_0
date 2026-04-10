@@ -668,6 +668,9 @@ class OrtSessionOptions {
       case OrtProvider.cann:
         providerName = 'CANN';
         break;
+      case OrtProvider.qnn:
+        providerName = 'QNN';
+        break;
       default:
         return false;
     }
@@ -755,6 +758,250 @@ class OrtSessionOptions {
     return true;
   }
 
+  /// Appends TensorRT provider using the V2 API with advanced options.
+  ///
+  /// This is the modern way to configure TensorRT with full control over all options.
+  ///
+  /// **Parameters:**
+  /// - `deviceId`: CUDA device ID (default: 0)
+  /// - `cachePath`: Directory to store compiled TensorRT engines (default: './trt_engine_cache')
+  /// - `enableFp16`: Enable FP16 precision mode for faster inference (default: true)
+  /// - `enableInt8`: Enable INT8 quantization (default: false, requires calibration)
+  /// - `maxWorkspaceSize`: Max workspace memory in bytes (default: 4GB)
+  ///
+  /// **Example:**
+  /// ```dart
+  /// sessionOptions.appendTensorRTProviderV2(
+  ///   deviceId: 0,
+  ///   cachePath: './my_trt_cache',
+  ///   enableFp16: true,
+  /// );
+  /// ```
+  bool appendTensorRTProviderV2({
+    int deviceId = 0,
+    String? cachePath,
+    bool enableFp16 = true,
+    bool enableInt8 = false,
+    int maxWorkspaceSize = 4 * (1 << 30), // 4GB default
+    bool dumpSubgraphs = false,
+  }) {
+    // Step 1: Create TensorRT V2 options object
+    final trtOptionsPtr =
+        calloc<ffi.Pointer<bg.OrtTensorRTProviderOptionsV2>>();
+    var statusPtr = OrtEnv.instance.ortApiPtr.ref.CreateTensorRTProviderOptions
+            .asFunction<
+                bg.OrtStatusPtr Function(
+                    ffi.Pointer<
+                        ffi.Pointer<bg.OrtTensorRTProviderOptionsV2>>)>()(
+        trtOptionsPtr);
+
+    try {
+      OrtStatus.checkOrtStatus(statusPtr);
+      final trtOptions = trtOptionsPtr.value;
+
+      // Step 2: Build options map
+      final options = <String, String>{
+        'device_id': deviceId.toString(),
+        'trt_max_workspace_size': maxWorkspaceSize.toString(),
+        'trt_max_partition_iterations': '1000',
+        'trt_min_subgraph_size': '1',
+        'trt_fp16_enable': enableFp16 ? '1' : '0',
+        'trt_int8_enable': enableInt8 ? '1' : '0',
+        'trt_engine_cache_enable': '1',
+        'trt_dump_subgraphs': dumpSubgraphs ? '1' : '0',
+      };
+
+      if (cachePath != null) {
+        options['trt_engine_cache_path'] = cachePath;
+      }
+
+      // Step 3: Update TensorRT options with key-value pairs
+      final numKeys = options.length;
+      final keyPtrPtr = calloc<ffi.Pointer<ffi.Char>>(numKeys);
+      final valuePtrPtr = calloc<ffi.Pointer<ffi.Char>>(numKeys);
+
+      var i = 0;
+      final nativeStrings = <ffi.Pointer<Utf8>>[];
+      for (final entry in options.entries) {
+        final keyPtr = entry.key.toNativeUtf8();
+        final valuePtr = entry.value.toNativeUtf8();
+        nativeStrings.add(keyPtr);
+        nativeStrings.add(valuePtr);
+        keyPtrPtr[i] = keyPtr.cast<ffi.Char>();
+        valuePtrPtr[i] = valuePtr.cast<ffi.Char>();
+        i++;
+      }
+
+      statusPtr = OrtEnv.instance.ortApiPtr.ref.UpdateTensorRTProviderOptions
+          .asFunction<
+              bg.OrtStatusPtr Function(
+                  ffi.Pointer<bg.OrtTensorRTProviderOptionsV2>,
+                  ffi.Pointer<ffi.Pointer<ffi.Char>>,
+                  ffi.Pointer<ffi.Pointer<ffi.Char>>,
+                  int)>()(trtOptions, keyPtrPtr, valuePtrPtr, numKeys);
+
+      // Free native strings
+      for (final ptr in nativeStrings) {
+        calloc.free(ptr);
+      }
+      calloc.free(keyPtrPtr);
+      calloc.free(valuePtrPtr);
+
+      OrtStatus.checkOrtStatus(statusPtr);
+
+      // Step 4: Append the TensorRT V2 provider to session options
+      statusPtr = OrtEnv.instance.ortApiPtr.ref
+              .SessionOptionsAppendExecutionProvider_TensorRT_V2
+              .asFunction<
+                  bg.OrtStatusPtr Function(ffi.Pointer<bg.OrtSessionOptions>,
+                      ffi.Pointer<bg.OrtTensorRTProviderOptionsV2>)>()(
+          _ptr, trtOptions);
+
+      OrtStatus.checkOrtStatus(statusPtr);
+
+      // Step 5: Release TensorRT options
+      OrtEnv.instance.ortApiPtr.ref.ReleaseTensorRTProviderOptions.asFunction<
+          void Function(
+              ffi.Pointer<bg.OrtTensorRTProviderOptionsV2>)>()(trtOptions);
+
+      calloc.free(trtOptionsPtr);
+      return true;
+    } catch (e) {
+      // Clean up on error
+      if (trtOptionsPtr.value != ffi.nullptr) {
+        OrtEnv.instance.ortApiPtr.ref.ReleaseTensorRTProviderOptions.asFunction<
+                void Function(ffi.Pointer<bg.OrtTensorRTProviderOptionsV2>)>()(
+            trtOptionsPtr.value);
+      }
+      calloc.free(trtOptionsPtr);
+      rethrow;
+    }
+  }
+
+  /// Appends CUDA provider using the V2 API with advanced options.
+  ///
+  /// This is the modern way to configure CUDA with full control over all options.
+  ///
+  /// **Parameters:**
+  /// - `deviceId`: CUDA device ID (default: 0)
+  /// - `cudnnConvAlgoSearch`: cuDNN convolution algorithm search mode:
+  ///   - 'EXHAUSTIVE': Best performance, slower startup (default)
+  ///   - 'HEURISTIC': Faster startup, good performance
+  ///   - 'DEFAULT': cuDNN default
+  /// - `gpuMemLimit`: GPU memory limit in bytes (default: unlimited)
+  /// - `arenaExtendStrategy`: Memory allocation strategy:
+  ///   - 'kNextPowerOfTwo': Double size each time (default)
+  ///   - 'kSameAsRequested': Minimal allocation
+  /// - `enableCudaGraph`: Enable CUDA graph optimization (default: false)
+  /// - `enableSkipLayerNorm`: Enable fused SkipLayerNorm kernel (default: false)
+  ///
+  /// **Example:**
+  /// ```dart
+  /// sessionOptions.appendCudaProviderV2(
+  ///   deviceId: 0,
+  ///   cudnnConvAlgoSearch: 'EXHAUSTIVE',
+  ///   gpuMemLimit: 2 * (1 << 30), // 2GB
+  ///   enableCudaGraph: true,
+  /// );
+  /// ```
+  bool appendCudaProviderV2({
+    int deviceId = 0,
+    String cudnnConvAlgoSearch = 'EXHAUSTIVE',
+    int? gpuMemLimit,
+    String arenaExtendStrategy = 'kNextPowerOfTwo',
+    bool enableCudaGraph = false,
+    bool enableSkipLayerNorm = false,
+  }) {
+    // Step 1: Create CUDA V2 options object
+    final cudaOptionsPtr = calloc<ffi.Pointer<bg.OrtCUDAProviderOptionsV2>>();
+    var statusPtr = OrtEnv.instance.ortApiPtr.ref.CreateCUDAProviderOptions
+            .asFunction<
+                bg.OrtStatusPtr Function(
+                    ffi.Pointer<ffi.Pointer<bg.OrtCUDAProviderOptionsV2>>)>()(
+        cudaOptionsPtr);
+
+    try {
+      OrtStatus.checkOrtStatus(statusPtr);
+      final cudaOptions = cudaOptionsPtr.value;
+
+      // Step 2: Build options map
+      final options = <String, String>{
+        'device_id': deviceId.toString(),
+        'cudnn_conv_algo_search': cudnnConvAlgoSearch,
+        'arena_extend_strategy': arenaExtendStrategy,
+        'enable_cuda_graph': enableCudaGraph ? '1' : '0',
+        'enable_skip_layer_norm_strict_mode': enableSkipLayerNorm ? '1' : '0',
+      };
+
+      if (gpuMemLimit != null) {
+        options['gpu_mem_limit'] = gpuMemLimit.toString();
+      }
+
+      // Step 3: Update CUDA options with key-value pairs
+      final numKeys = options.length;
+      final keyPtrPtr = calloc<ffi.Pointer<ffi.Char>>(numKeys);
+      final valuePtrPtr = calloc<ffi.Pointer<ffi.Char>>(numKeys);
+
+      var i = 0;
+      final nativeStrings = <ffi.Pointer<Utf8>>[];
+      for (final entry in options.entries) {
+        final keyPtr = entry.key.toNativeUtf8();
+        final valuePtr = entry.value.toNativeUtf8();
+        nativeStrings.add(keyPtr);
+        nativeStrings.add(valuePtr);
+        keyPtrPtr[i] = keyPtr.cast<ffi.Char>();
+        valuePtrPtr[i] = valuePtr.cast<ffi.Char>();
+        i++;
+      }
+
+      statusPtr = OrtEnv.instance.ortApiPtr.ref.UpdateCUDAProviderOptions
+          .asFunction<
+              bg.OrtStatusPtr Function(
+                  ffi.Pointer<bg.OrtCUDAProviderOptionsV2>,
+                  ffi.Pointer<ffi.Pointer<ffi.Char>>,
+                  ffi.Pointer<ffi.Pointer<ffi.Char>>,
+                  int)>()(cudaOptions, keyPtrPtr, valuePtrPtr, numKeys);
+
+      // Free native strings
+      for (final ptr in nativeStrings) {
+        calloc.free(ptr);
+      }
+      calloc.free(keyPtrPtr);
+      calloc.free(valuePtrPtr);
+
+      OrtStatus.checkOrtStatus(statusPtr);
+
+      // Step 4: Append the CUDA V2 provider to session options
+      statusPtr =
+          OrtEnv.instance.ortApiPtr.ref
+                  .SessionOptionsAppendExecutionProvider_CUDA_V2
+                  .asFunction<
+                      bg.OrtStatusPtr Function(
+                          ffi.Pointer<bg.OrtSessionOptions>,
+                          ffi.Pointer<bg.OrtCUDAProviderOptionsV2>)>()(
+              _ptr, cudaOptions);
+
+      OrtStatus.checkOrtStatus(statusPtr);
+
+      // Step 5: Release CUDA options
+      OrtEnv.instance.ortApiPtr.ref.ReleaseCUDAProviderOptions.asFunction<
+          void Function(
+              ffi.Pointer<bg.OrtCUDAProviderOptionsV2>)>()(cudaOptions);
+
+      calloc.free(cudaOptionsPtr);
+      return true;
+    } catch (e) {
+      // Clean up on error
+      if (cudaOptionsPtr.value != ffi.nullptr) {
+        OrtEnv.instance.ortApiPtr.ref.ReleaseCUDAProviderOptions.asFunction<
+                void Function(ffi.Pointer<bg.OrtCUDAProviderOptionsV2>)>()(
+            cudaOptionsPtr.value);
+      }
+      calloc.free(cudaOptionsPtr);
+      rethrow;
+    }
+  }
+
   /// Appends DirectML provider (DirectX 12 GPU acceleration).
   /// Works on Windows with AMD, Intel, or NVIDIA GPUs.
   /// Great for cross-vendor GPU support on Windows.
@@ -782,6 +1029,107 @@ class OrtSessionOptions {
     return _appendExecutionProvider(OrtProvider.dnnl, flags);
   }
 
+  /// Appends DNNL provider using the V2 API with advanced options.
+  ///
+  /// Intel's Deep Neural Network Library for optimized CPU inference.
+  ///
+  /// **Parameters:**
+  /// - `useArena`: Use memory arena for allocations (default: true)
+  /// - `threadpoolArgs`: Custom threadpool configuration (optional)
+  ///
+  /// **Example:**
+  /// ```dart
+  /// sessionOptions.appendDnnlProviderV2(
+  ///   useArena: true,
+  /// );
+  /// ```
+  bool appendDnnlProviderV2({
+    bool useArena = true,
+    Map<String, String>? additionalOptions,
+  }) {
+    // Step 1: Create DNNL options object
+    final dnnlOptionsPtr = calloc<ffi.Pointer<bg.OrtDnnlProviderOptions>>();
+    var statusPtr = OrtEnv.instance.ortApiPtr.ref.CreateDnnlProviderOptions
+            .asFunction<
+                bg.OrtStatusPtr Function(
+                    ffi.Pointer<ffi.Pointer<bg.OrtDnnlProviderOptions>>)>()(
+        dnnlOptionsPtr);
+
+    try {
+      OrtStatus.checkOrtStatus(statusPtr);
+      final dnnlOptions = dnnlOptionsPtr.value;
+
+      // Step 2: Build options map
+      final options = <String, String>{
+        'use_arena': useArena ? '1' : '0',
+      };
+
+      // Add any additional options
+      if (additionalOptions != null) {
+        options.addAll(additionalOptions);
+      }
+
+      // Step 3: Update DNNL options with key-value pairs
+      final numKeys = options.length;
+      final keyPtrPtr = calloc<ffi.Pointer<ffi.Char>>(numKeys);
+      final valuePtrPtr = calloc<ffi.Pointer<ffi.Char>>(numKeys);
+
+      var i = 0;
+      final nativeStrings = <ffi.Pointer<Utf8>>[];
+      for (final entry in options.entries) {
+        final keyPtr = entry.key.toNativeUtf8();
+        final valuePtr = entry.value.toNativeUtf8();
+        nativeStrings.add(keyPtr);
+        nativeStrings.add(valuePtr);
+        keyPtrPtr[i] = keyPtr.cast<ffi.Char>();
+        valuePtrPtr[i] = valuePtr.cast<ffi.Char>();
+        i++;
+      }
+
+      statusPtr = OrtEnv.instance.ortApiPtr.ref.UpdateDnnlProviderOptions
+          .asFunction<
+              bg.OrtStatusPtr Function(
+                  ffi.Pointer<bg.OrtDnnlProviderOptions>,
+                  ffi.Pointer<ffi.Pointer<ffi.Char>>,
+                  ffi.Pointer<ffi.Pointer<ffi.Char>>,
+                  int)>()(dnnlOptions, keyPtrPtr, valuePtrPtr, numKeys);
+
+      // Free native strings
+      for (final ptr in nativeStrings) {
+        calloc.free(ptr);
+      }
+      calloc.free(keyPtrPtr);
+      calloc.free(valuePtrPtr);
+
+      OrtStatus.checkOrtStatus(statusPtr);
+
+      // Step 4: Append the DNNL provider to session options
+      statusPtr = OrtEnv
+          .instance.ortApiPtr.ref.SessionOptionsAppendExecutionProvider_Dnnl
+          .asFunction<
+              bg.OrtStatusPtr Function(ffi.Pointer<bg.OrtSessionOptions>,
+                  ffi.Pointer<bg.OrtDnnlProviderOptions>)>()(_ptr, dnnlOptions);
+
+      OrtStatus.checkOrtStatus(statusPtr);
+
+      // Step 5: Release DNNL options
+      OrtEnv.instance.ortApiPtr.ref.ReleaseDnnlProviderOptions.asFunction<
+          void Function(ffi.Pointer<bg.OrtDnnlProviderOptions>)>()(dnnlOptions);
+
+      calloc.free(dnnlOptionsPtr);
+      return true;
+    } catch (e) {
+      // Clean up on error
+      if (dnnlOptionsPtr.value != ffi.nullptr) {
+        OrtEnv.instance.ortApiPtr.ref.ReleaseDnnlProviderOptions.asFunction<
+                void Function(ffi.Pointer<bg.OrtDnnlProviderOptions>)>()(
+            dnnlOptionsPtr.value);
+      }
+      calloc.free(dnnlOptionsPtr);
+      rethrow;
+    }
+  }
+
   /// Appends MIGraphX provider (AMD graph optimization).
   /// AMD's graph-level optimizations for their GPUs.
   bool appendMIGraphXProvider(MIGraphXFlags flags) {
@@ -792,6 +1140,120 @@ class OrtSessionOptions {
   /// Optimized for Huawei Ascend NPUs.
   bool appendCANNProvider([Map<String, String>? options]) {
     return _appendExecutionProvider2(OrtProvider.cann, options ?? {});
+  }
+
+  /// Appends CANN provider using the V2 API with advanced options.
+  ///
+  /// Huawei's CANN (Compute Architecture for Neural Networks) for Ascend NPUs.
+  ///
+  /// **Parameters:**
+  /// - `deviceId`: NPU device ID (default: 0)
+  /// - `npuMemLimit`: NPU memory limit in bytes (default: 2GB)
+  /// - `precisionMode`: Precision mode:
+  ///   - 'force_fp16': Force FP16 precision
+  ///   - 'allow_fp32_to_fp16': Allow FP32 to FP16 conversion (default)
+  ///   - 'must_keep_origin_dtype': Keep original precision
+  /// - `opSelectImplMode`: Operator selection mode (default: 'high_performance')
+  ///
+  /// **Example:**
+  /// ```dart
+  /// sessionOptions.appendCannProviderV2(
+  ///   deviceId: 0,
+  ///   precisionMode: 'allow_fp32_to_fp16',
+  ///   npuMemLimit: 2 * (1 << 30), // 2GB
+  /// );
+  /// ```
+  bool appendCannProviderV2({
+    int deviceId = 0,
+    int npuMemLimit = 2 * (1 << 30), // 2GB default
+    String precisionMode = 'allow_fp32_to_fp16',
+    String opSelectImplMode = 'high_performance',
+    Map<String, String>? additionalOptions,
+  }) {
+    // Step 1: Create CANN options object
+    final cannOptionsPtr = calloc<ffi.Pointer<bg.OrtCANNProviderOptions>>();
+    var statusPtr = OrtEnv.instance.ortApiPtr.ref.CreateCANNProviderOptions
+            .asFunction<
+                bg.OrtStatusPtr Function(
+                    ffi.Pointer<ffi.Pointer<bg.OrtCANNProviderOptions>>)>()(
+        cannOptionsPtr);
+
+    try {
+      OrtStatus.checkOrtStatus(statusPtr);
+      final cannOptions = cannOptionsPtr.value;
+
+      // Step 2: Build options map
+      final options = <String, String>{
+        'device_id': deviceId.toString(),
+        'npu_mem_limit': npuMemLimit.toString(),
+        'precision_mode': precisionMode,
+        'op_select_impl_mode': opSelectImplMode,
+      };
+
+      // Add any additional options
+      if (additionalOptions != null) {
+        options.addAll(additionalOptions);
+      }
+
+      // Step 3: Update CANN options with key-value pairs
+      final numKeys = options.length;
+      final keyPtrPtr = calloc<ffi.Pointer<ffi.Char>>(numKeys);
+      final valuePtrPtr = calloc<ffi.Pointer<ffi.Char>>(numKeys);
+
+      var i = 0;
+      final nativeStrings = <ffi.Pointer<Utf8>>[];
+      for (final entry in options.entries) {
+        final keyPtr = entry.key.toNativeUtf8();
+        final valuePtr = entry.value.toNativeUtf8();
+        nativeStrings.add(keyPtr);
+        nativeStrings.add(valuePtr);
+        keyPtrPtr[i] = keyPtr.cast<ffi.Char>();
+        valuePtrPtr[i] = valuePtr.cast<ffi.Char>();
+        i++;
+      }
+
+      statusPtr = OrtEnv.instance.ortApiPtr.ref.UpdateCANNProviderOptions
+          .asFunction<
+              bg.OrtStatusPtr Function(
+                  ffi.Pointer<bg.OrtCANNProviderOptions>,
+                  ffi.Pointer<ffi.Pointer<ffi.Char>>,
+                  ffi.Pointer<ffi.Pointer<ffi.Char>>,
+                  int)>()(cannOptions, keyPtrPtr, valuePtrPtr, numKeys);
+
+      // Free native strings
+      for (final ptr in nativeStrings) {
+        calloc.free(ptr);
+      }
+      calloc.free(keyPtrPtr);
+      calloc.free(valuePtrPtr);
+
+      OrtStatus.checkOrtStatus(statusPtr);
+
+      // Step 4: Append the CANN provider to session options
+      statusPtr = OrtEnv
+          .instance.ortApiPtr.ref.SessionOptionsAppendExecutionProvider_CANN
+          .asFunction<
+              bg.OrtStatusPtr Function(ffi.Pointer<bg.OrtSessionOptions>,
+                  ffi.Pointer<bg.OrtCANNProviderOptions>)>()(_ptr, cannOptions);
+
+      OrtStatus.checkOrtStatus(statusPtr);
+
+      // Step 5: Release CANN options
+      OrtEnv.instance.ortApiPtr.ref.ReleaseCANNProviderOptions.asFunction<
+          void Function(ffi.Pointer<bg.OrtCANNProviderOptions>)>()(cannOptions);
+
+      calloc.free(cannOptionsPtr);
+      return true;
+    } catch (e) {
+      // Clean up on error
+      if (cannOptionsPtr.value != ffi.nullptr) {
+        OrtEnv.instance.ortApiPtr.ref.ReleaseCANNProviderOptions.asFunction<
+                void Function(ffi.Pointer<bg.OrtCANNProviderOptions>)>()(
+            cannOptionsPtr.value);
+      }
+      calloc.free(cannOptionsPtr);
+      rethrow;
+    }
   }
 
   /// Appends QNN provider (Qualcomm Neural Network).
