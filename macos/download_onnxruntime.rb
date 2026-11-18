@@ -19,7 +19,9 @@ def download_onnxruntime
 
   puts "📦 ONNX Runtime library not found. Downloading from Artifactory..."
 
-  download_url = "https://repo.devops.ptech.io/artifactory/tools/onnx-runtime/#{ONNXRUNTIME_VERSION}/onnx-macos.tar.xz"
+  # ONNXRUNTIME_DEPS_URL env var overrides the default base URL
+  base_url = ENV['ONNXRUNTIME_DEPS_URL'] || "https://repo.devops.ptech.io/artifactory/tools/onnx-runtime/#{ONNXRUNTIME_VERSION}"
+  download_url = "#{base_url}/onnx-macos.tar.xz"
   temp_dir = File.join(SCRIPT_DIR, "temp_download")
   archive_path = File.join(temp_dir, "onnxruntime.tar.xz")
 

@@ -6,7 +6,9 @@ $ErrorActionPreference = "Stop"
 # Configuration
 $ONNXRUNTIME_VERSION = "1.22.0"
 $SCRIPT_DIR = Split-Path -Parent $MyInvocation.MyCommand.Path
-$DOWNLOAD_URL = "https://repo.devops.ptech.io/artifactory/tools/onnx-runtime/$ONNXRUNTIME_VERSION/onnx-windows-x64.7z"
+# ONNXRUNTIME_DEPS_URL env var overrides the default base URL
+$BASE_URL = if ($env:ONNXRUNTIME_DEPS_URL) { $env:ONNXRUNTIME_DEPS_URL } else { "https://repo.devops.ptech.io/artifactory/tools/onnx-runtime/$ONNXRUNTIME_VERSION" }
+$DOWNLOAD_URL = "$BASE_URL/onnx-windows-x64.7z"
 
 # List of expected libraries
 $EXPECTED_LIBS = @(

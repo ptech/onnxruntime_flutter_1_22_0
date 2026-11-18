@@ -60,7 +60,9 @@ if (!ortJniDir.exists()) {
     def aar = file("onnxruntime/onnx-android-${ortVersion}.aar")
     aar.parentFile.mkdirs()
     println "Downloading ONNX Runtime ${ortVersion} for Android from Artifactory..."
-    new URL("https://repo.devops.ptech.io/artifactory/tools/onnx-runtime/${ortVersion}/onnx-android.aar")
+    // ONNXRUNTIME_DEPS_URL env var overrides the default base URL
+    def baseUrl = System.getenv("ONNXRUNTIME_DEPS_URL") ?: "https://repo.devops.ptech.io/artifactory/tools/onnx-runtime/${ortVersion}"
+    new URL("${baseUrl}/onnx-android.aar")
         .withInputStream { i -> aar.withOutputStream { it << i } }
     copy {
         from zipTree(aar)
