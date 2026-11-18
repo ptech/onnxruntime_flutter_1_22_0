@@ -55,13 +55,17 @@ try {
 
     # Extract the archive
     Write-Host "  Extracting archive..."
-    # Expand-Archive only handles .zip; use 7-Zip if installed, else the built-in tar.exe (libarchive)
-    if (Get-Command 7z -ErrorAction SilentlyContinue) {
-        & 7z x $ARCHIVE_PATH "-o$TEMP_DIR" -y | Out-Null
+    # Expand-Archive only handles .zip; use 7-Zip if installed, else Windows' own tar.exe (libarchive).
+    # Full path: a Git for Windows / MSYS tar earlier on PATH reads "C:\..." as a remote host and fails.
+    $sevenZip = (Get-Command 7z -ErrorAction SilentlyContinue).Source
+    if (-not $sevenZip -and (Test-Path "$env:ProgramFiles\7-Zip\7z.exe")) { $sevenZip = "$env:ProgramFiles\7-Zip\7z.exe" }
+    $windowsTar = Join-Path $env:SystemRoot "System32\tar.exe"
+    if ($sevenZip) {
+        & $sevenZip x $ARCHIVE_PATH "-o$TEMP_DIR" -y | Out-Null
     } else {
-        & tar.exe -xf $ARCHIVE_PATH -C $TEMP_DIR
+        & $windowsTar -xf $ARCHIVE_PATH -C $TEMP_DIR
     }
-    if ($LASTEXITCODE -ne 0) { throw "Failed to extract $ARCHIVE_PATH (install 7-Zip if tar.exe lacks 7z support)" }
+    if ($LASTEXITCODE -ne 0) { throw "Failed to extract $ARCHIVE_PATH (install 7-Zip if $windowsTar lacks 7z support)" }
     Write-Host "  [OK] Extraction complete"
 
     # Find and copy the libraries
