@@ -47,8 +47,25 @@ android {
     defaultConfig {
         minSdkVersion 21
     }
+
+    sourceSets {
+        main.jniLibs.srcDirs += 'onnxruntime/jni'
+    }
 }
 
-dependencies {
-    implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.23.2'
+// The plugin only uses ORT via FFI, so we just need libonnxruntime.so per ABI from the AAR.
+def ortVersion = '1.22.0'
+def ortJniDir = file('onnxruntime/jni')
+if (!ortJniDir.exists()) {
+    def aar = file("onnxruntime/onnx-android-${ortVersion}.aar")
+    aar.parentFile.mkdirs()
+    println "Downloading ONNX Runtime ${ortVersion} for Android from Artifactory..."
+    new URL("https://repo.devops.ptech.io/artifactory/tools/onnx-runtime/${ortVersion}/onnx-android.aar")
+        .withInputStream { i -> aar.withOutputStream { it << i } }
+    copy {
+        from zipTree(aar)
+        include 'jni/*/libonnxruntime.so'
+        into file('onnxruntime')
+    }
+    aar.delete()
 }

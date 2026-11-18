@@ -6,7 +6,7 @@ $ErrorActionPreference = "Stop"
 # Configuration
 $ONNXRUNTIME_VERSION = "1.22.0"
 $SCRIPT_DIR = Split-Path -Parent $MyInvocation.MyCommand.Path
-$DOWNLOAD_URL = "https://github.com/microsoft/onnxruntime/releases/download/v$ONNXRUNTIME_VERSION/onnxruntime-win-x64-gpu-$ONNXRUNTIME_VERSION.zip"
+$DOWNLOAD_URL = "https://repo.devops.ptech.io/artifactory/tools/onnx-runtime/$ONNXRUNTIME_VERSION/onnx-windows-x64.7z"
 
 # List of expected libraries
 $EXPECTED_LIBS = @(
@@ -31,7 +31,7 @@ if ($allExist) {
     exit 0
 }
 
-Write-Host "ONNX Runtime libraries not found. Downloading from Microsoft releases..."
+Write-Host "ONNX Runtime libraries not found. Downloading from Artifactory..."
 
 # Create temp directory
 $TEMP_DIR = Join-Path $SCRIPT_DIR "temp_download"
@@ -42,7 +42,7 @@ New-Item -ItemType Directory -Path $TEMP_DIR | Out-Null
 
 try {
     # Download the archive
-    $ARCHIVE_PATH = Join-Path $TEMP_DIR "onnxruntime.zip"
+    $ARCHIVE_PATH = Join-Path $TEMP_DIR "onnxruntime.7z"
     Write-Host "  Downloading from $DOWNLOAD_URL..."
 
     # Use .NET WebClient for progress
@@ -53,7 +53,13 @@ try {
 
     # Extract the archive
     Write-Host "  Extracting archive..."
-    Expand-Archive -Path $ARCHIVE_PATH -DestinationPath $TEMP_DIR -Force
+    # Expand-Archive only handles .zip; use 7-Zip if installed, else the built-in tar.exe (libarchive)
+    if (Get-Command 7z -ErrorAction SilentlyContinue) {
+        & 7z x $ARCHIVE_PATH "-o$TEMP_DIR" -y | Out-Null
+    } else {
+        & tar.exe -xf $ARCHIVE_PATH -C $TEMP_DIR
+    }
+    if ($LASTEXITCODE -ne 0) { throw "Failed to extract $ARCHIVE_PATH (install 7-Zip if tar.exe lacks 7z support)" }
     Write-Host "  [OK] Extraction complete"
 
     # Find and copy the libraries

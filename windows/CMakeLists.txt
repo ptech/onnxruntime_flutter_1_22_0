@@ -8,7 +8,7 @@ cmake_minimum_required(VERSION 3.14)
 set(PROJECT_NAME "onnxruntime_v2")
 project(${PROJECT_NAME} LANGUAGES CXX)
 
-# Download ONNX Runtime libraries from official Microsoft release if not present
+# Download ONNX Runtime libraries from PTech Artifactory if not present
 set(DOWNLOAD_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/download_onnxruntime.ps1")
 if(EXISTS "${DOWNLOAD_SCRIPT}")
   execute_process(
@@ -25,7 +25,7 @@ if(EXISTS "${DOWNLOAD_SCRIPT}")
 
   if(NOT DOWNLOAD_RESULT EQUAL 0)
     message(WARNING "Failed to download ONNX Runtime libraries: ${DOWNLOAD_ERROR}")
-    message(WARNING "Please download manually from https://github.com/microsoft/onnxruntime/releases")
+    message(WARNING "Please download manually from https://repo.devops.ptech.io/artifactory/tools/onnx-runtime/1.22.0/")
   endif()
 endif()
 
