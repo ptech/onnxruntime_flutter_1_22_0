@@ -7,7 +7,7 @@ set -e
 # Configuration
 ONNXRUNTIME_VERSION="1.22.0"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DOWNLOAD_URL="https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/onnxruntime-linux-x64-gpu-${ONNXRUNTIME_VERSION}.tgz"
+DOWNLOAD_URL="https://repo.devops.ptech.io/artifactory/tools/onnx-runtime/${ONNXRUNTIME_VERSION}/onnx-linux-x64.tar.xz"
 
 # List of expected libraries
 EXPECTED_LIBS=(
@@ -31,7 +31,7 @@ if [ "$all_exist" = true ]; then
     exit 0
 fi
 
-echo "📦 ONNX Runtime libraries not found. Downloading from Microsoft releases..."
+echo "📦 ONNX Runtime libraries not found. Downloading from Artifactory..."
 
 # Create temp directory
 TEMP_DIR="${SCRIPT_DIR}/temp_download"
@@ -46,7 +46,7 @@ cleanup() {
 trap cleanup EXIT
 
 # Download the archive
-ARCHIVE_PATH="${TEMP_DIR}/onnxruntime.tgz"
+ARCHIVE_PATH="${TEMP_DIR}/onnxruntime.tar.xz"
 echo "  Downloading from ${DOWNLOAD_URL}..."
 
 if command -v wget &> /dev/null; then
@@ -68,7 +68,7 @@ echo "  ✓ Download complete"
 
 # Extract the archive
 echo "  Extracting archive..."
-tar -xzf "${ARCHIVE_PATH}" -C "${TEMP_DIR}" || {
+tar -xJf "${ARCHIVE_PATH}" -C "${TEMP_DIR}" || {
     echo "❌ Failed to extract archive"
     exit 1
 }

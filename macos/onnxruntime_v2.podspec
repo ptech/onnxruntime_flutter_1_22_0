@@ -13,7 +13,7 @@ OnnxRuntime plugin for Flutter apps.
   s.license          = { :file => '../LICENSE' }
   s.author           = { 'Your Company' => 'email@example.com' }
 
-  # Download ONNX Runtime library from official Microsoft release if not present
+  # Download ONNX Runtime library from PTech Artifactory if not present
   require_relative 'download_onnxruntime'
   download_onnxruntime
 

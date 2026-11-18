@@ -17,11 +17,11 @@ def download_onnxruntime
     return true
   end
 
-  puts "📦 ONNX Runtime library not found. Downloading from Microsoft releases..."
+  puts "📦 ONNX Runtime library not found. Downloading from Artifactory..."
 
-  download_url = "https://github.com/microsoft/onnxruntime/releases/download/v#{ONNXRUNTIME_VERSION}/onnxruntime-osx-universal2-#{ONNXRUNTIME_VERSION}.tgz"
+  download_url = "https://repo.devops.ptech.io/artifactory/tools/onnx-runtime/#{ONNXRUNTIME_VERSION}/onnx-macos.tar.xz"
   temp_dir = File.join(SCRIPT_DIR, "temp_download")
-  archive_path = File.join(temp_dir, "onnxruntime.tgz")
+  archive_path = File.join(temp_dir, "onnxruntime.tar.xz")
 
   begin
     # Create temp directory
@@ -45,7 +45,7 @@ def download_onnxruntime
 
     # Extract the archive
     puts "  Extracting archive..."
-    system("tar -xzf #{archive_path} -C #{temp_dir}") or raise "Failed to extract archive"
+    system("tar -xf #{archive_path} -C #{temp_dir}") or raise "Failed to extract archive"
 
     # Find and copy the dylib (exclude .dSYM directories)
     extracted_lib = Dir.glob("#{temp_dir}/**/libonnxruntime.#{ONNXRUNTIME_VERSION}.dylib")
