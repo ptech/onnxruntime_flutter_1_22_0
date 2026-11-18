@@ -7,7 +7,9 @@ set -e
 # Configuration
 ONNXRUNTIME_VERSION="1.22.0"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DOWNLOAD_URL="https://repo.devops.ptech.io/artifactory/tools/onnx-runtime/${ONNXRUNTIME_VERSION}/onnx-linux-x64.tar.xz"
+# ONNXRUNTIME_DEPS_URL env var overrides the default base URL
+BASE_URL="${ONNXRUNTIME_DEPS_URL:-https://repo.devops.ptech.io/artifactory/tools/onnx-runtime/${ONNXRUNTIME_VERSION}}"
+DOWNLOAD_URL="${BASE_URL}/onnx-linux-x64.tar.xz"
 
 # List of expected libraries
 EXPECTED_LIBS=(
